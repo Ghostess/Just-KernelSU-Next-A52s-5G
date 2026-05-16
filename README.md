@@ -1,16 +1,30 @@
-# bone-machine-sm7325-kernel
-Stock Android Kernel for the Samsung A52s 5G (One UI only), with backported changes from A73 source code, KernelSU-Next root solution, disabled Samsung Knox, debugging and logging features, and switchable SELinux policy.
+# bone-machine's custom Android Kernel for the Samsung A52s 5G (Snapdragon 778G - SM7325)
+
+Based from **A528NKSU4GXE1** with backported changes from A73 5G (**A736BXXUAFYE6**)
+
+Linux v5.4.289, built with Clang v19.0 (plus other compilation optimizations)
+
+### Features
+
+- Implemented KSU-Next (**v3.2.0-legacy**) as root solution, with manual hooks
+- Supports both AOSP and One UI ROMs (works on Android 16, should work on other versions)
+- Added new GPU minimum frequency step, plus reducing voltage a bit for all other steps and idle timeout
+- Enabled KSWAPD CPU mask feature (used in A73 5G)
+- Switched ZRAM compression algorithm to LZ4KD
+- Disabled several kernel debugging tools, flags, and features
+- Enabled CONFIG_TMPFS_XATTR for `mountify` KernelSU module mounting compatibility
+- Disabled Samsung Knox
+- Switchable SELinux policy
+
+And more (check commit log)
 
 # How to build
 
 ### Clang
 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz
 
-### GCC
-https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
-
 ### Export PATH
-`export PATH="/{path-to-your-clang-bin-folder}/clang/bin:/{path-to-your-gcc-bin-folder}/bin:$PATH"`
+`export PATH="/{path-to-your-clang-bin-folder}/clang/bin:$PATH"`
 
 ### Make defconfig
 `make O=$(pwd)/out ARCH=arm64 vendor/a52sxq_kor_single_defconfig`
@@ -21,35 +35,37 @@ make -j$(nproc) \
   O=$(pwd)/out \
   ARCH=arm64 \
   CC=clang \
-  LD=ld.lld \
-  NM=llvm-nm \
-  OBJCOPY=llvm-objcopy \
-  CLANG_TRIPLE=aarch64-none-linux-gnu- \
   LLVM=1 \
   LLVM_IAS=1 \
-  CROSS_COMPILE=llvm- \
+  CROSS_COMPILE=aarch64-none-linux-gnu- \
+  KBUILD_BUILD_USER=example \
+  KBUILD_BUILD_HOST=kernel \
   CONFIG_SECTION_MISMATCH_WARN_ONLY=y
 ```
 
-`Clang Shadow Call Stack (SHADOW_CALL_STACK)` y
+If asked, use these options
 
-`Use virtually mapped shadow call stacks (SHADOW_CALL_STACK_VMAP)`  y
+`Enable vDSO for 32-bit applications (COMPAT_VDSO)` **y**
 
-`Link-Time Optimization (LTO)` 2
+`Clang Shadow Call Stack (SHADOW_CALL_STACK)` **y**
 
-`Use Clang's Control Flow Integrity (CFI) (CFI_CLANG)` y
+`Use virtually mapped shadow call stacks (SHADOW_CALL_STACK_VMAP)`  **y**
 
-`Use CFI shadow to speed up cross-module checks (CFI_CLANG_SHADOW)` y
+`Link-Time Optimization (LTO)` **2**
 
-`Use CFI in permissive mode (CFI_PERMISSIVE)` n
+`Use Clang's Control Flow Integrity (CFI) (CFI_CLANG)` **n** (or **yes** if not integrating KSU-Next root solution)
 
-`Use RELR relocation packing (RELR)` y
+`Use CFI shadow to speed up cross-module checks (CFI_CLANG_SHADOW)` **y**
 
-`Use Clang's ThinLTO (EXPERIMENTAL) (THINLTO)` y
+`Use CFI in permissive mode (CFI_PERMISSIVE)` **n**
 
-Use `modules=0` to skip module compilation or add Image \ ?
+`Use RELR relocation packing (RELR)` **y**
+
+`Use Clang's ThinLTO (EXPERIMENTAL) (THINLTO)` **y**
 
 ### Prepare module files
+`cd out/`
+
 `mkdir -p modules_for_zip`
 
 `find . -type f -name "*.ko" -exec cp {} modules_for_zip/ \;`
@@ -61,9 +77,9 @@ Use `modules=0` to skip module compilation or add Image \ ?
 
 [avbtool](https://android.googlesource.com/platform/external/avb/+/refs/heads/main/avbtool.py?format=TEXT)
 
-Extract `boot.img` and `vendor_boot.img` from ROM .zip file
+Extract `boot.img` and `vendor_boot.img` from ROM .zip file (or use the ones from `template-zip-file` folder, located at the kernel root directory)
 
-Erase footer from both of them with `avbtool erase_footer --image {file-image}.img`
+Erase footer from both of them with `avbtool erase_footer --image {file-image}.img` (not necessary if using the ones from `template-zip-file` folder)
 
 ### boot.img
 `magiskboot unpack boot.img`
@@ -86,15 +102,15 @@ Open header file and replace first line with `SRPUE26A001` (probably not necessa
 
 `cpio -idm < ../ramdisk.cpio`
 
-`sudo chown -R $(whoami):$(whoami)`
+`sudo chown -R $(whoami):$(whoami) .`
 
 `rm -rf lib/modules/5.4-gki/*`
 
 Place .ko files from `modules_for_zip/` and `modules.alias`, `modules.dep`, `modules.softdep` and `modules.load` in `lib/modules/`, make sure and `modules.dep` entry lines for each module points to `/lib/modules/` and not `/vendor/lib/modules/`
 
-You can find `modules.*` files for the default defconfig in the kernel source tree if you don't have any
+**Note**: You can find `modules.*` files (`modules.alias`, etc.) in the `template-zip-file` folder at the kernel root directory, along with .ko module files, built for the `ksu-next-aosp` branch (though you shouldn't need them if your build was successful, see `modules_for_zip/` steps)
 
-`cp -rf {kernel-source-directory}/firmware/tsp_stm/fts5cu56a_a52sxq* lib/firmware/tsp_stm/`
+`cp -rf {kernel-source-directory}/firmware/tsp_stm/fts5cu56a_a52sxq* lib/firmware/tsp_stm/` (not necessary if using `vendor_boot.img` from `template-zip-file` folder, since it is already present)
 
 `sudo chown -R root:root .`
 
@@ -106,36 +122,50 @@ You can find `modules.*` files for the default defconfig in the kernel source tr
 
 `cd ..`
 
-`sudo rm -rf /ramdisk`
+`sudo rm -rf ramdisk/`
 
-Repack with `magiskboot repack vendor_boot.img` and place in flashable .zip file `images` folder, change its name to `vendor_boot.img`
+Repack with `magiskboot repack vendor_boot.img` and place in flashable .zip file `images` folder, rename to `vendor_boot.img`
 
 ### Make flashable .zip file
 `zip -r -9 {flashable-kernel-zip-file-name}.zip *` and flash it on your recovery environment
 
 ### Start-over
-`make ARCH=arm64 mrproper`
+`make ARCH=arm64 mrproper CONFIG_KSU_MANUAL_HOOK=y` (for whatever reason, KSU-Next needs that last flag enabled)
 
-`rm -rf out`
+`rm -rf out/`
 
-## Update Git Submodules
+## Update git submodules
 `git submodule update --init --recursive`
 
-### Kernel su repo update example
+## Update KSU-Next definitions
 ```
 cd KernelSU-Next
 git fetch --tags
-git checkout v1.0.10
+git checkout v3.2.0-legacy
 cd ..
 git add KernelSU-Next
-git commit -m "Update KernelSU-Next submodule to v1.0.10"
+git commit -m "Update KernelSU-Next to v3.2.0-legacy"
 ```
 
-# Credits
-salvogiangri, utkustnr, RisenID, saadelasfur, Simon
+## KSU-Next and other notes
+
+Use [mountify](https://github.com/backslashxx/mountify) as the primary metamodule
+
+Update GPU drivers with this [KSU module](https://t.me/adrenolabsupport/242/1157)
+
+Use [Zygisk-Next](https://github.com/Dr-TSNG/ZygiskNext), and this version of [LSPosed](https://t.me/LSPosed/311) if needed (check for newer versions on that Telegram group)
+
+For ad-blocking, just use [bindhosts](https://github.com/bindhosts/bindhosts)
+
+# Credits (*)
+**salvogiangri** (kernel, UN1CA ROM), **utkustnr/Frax3r** (kernel, update-binary shell script and README.md instructions), **RisenID** (kernel), **saadelasfur** (kernel), **Simon1511** (AOSP related changes), **MySelly** (crDroid's Nothing-Phone-1 kernel), **rifsxd** (KSU-Next), **backslashxx** (Manual hook implementation for KSU-Next), **osm0sis** (Recovery Flashable Zip shell script), **ravindu644** (kernel compilation), **Samsung** (original kernel source code)
+
+<sub>* There are several commits which do not have the original author's name. In most cases, you can find the source for each change inside each commit. In any case, I do not take credit for them.</sub>
 
 # Resources
 https://github.com/Mesa-Labs-Archive/android_kernel_samsung_sm7325/
+
+https://github.com/salvogiangri/android_kernel_samsung_sm7325
 
 https://github.com/utkustnr/android_kernel_samsung_sm7325/
 
@@ -143,52 +173,14 @@ https://github.com/RisenID/kernel_samsung_ascendia_sm7325
 
 https://github.com/saadelasfur/android_kernel_samsung_sm7325/
 
+https://github.com/LineageOS/android_kernel_samsung_sm7325
+
+https://github.com/crdroidandroid/android_kernel_nothing_sm7325/
+
+https://github.com/KernelSU-Next/KernelSU-Next
+
+https://github.com/backslashxx/KernelSU/issues/5#event-24583207399
+
 https://github.com/ravindu644/Android-Kernel-Tutorials
 
 https://opensource.samsung.com/uploadList?menuItem=mobile (SM-A736B, SM-A528B, SM-A528N)
-
-## Legacy
-```
-make -j$(nproc) \
-  O=$(pwd)/out \
-  ARCH=arm64 \
-  LLVM=1 \
-  LLVM_IAS=1 \
-  CONFIG_SECTION_MISMATCH_WARN_ONLY=y
-```
-
-`export PATH="/{path-to-your-clang-bin-folder}/clang/bin:$PATH"`
-
-`mkdir -p /tmp/depmod-temp/lib/modules/5.4.254`
-
-`cp {kernel-source-directory}/out/modules_for_zip/*.ko /tmp/depmod-temp/lib/modules/5.4.254/`
-
-`depmod -b /tmp/depmod-temp -r 5.4.254`
-
-`sed -i 's/\(^\| \)\([^: ]*\.ko\)/\1\/vendor\/lib\/modules\/\2/g' /tmp/depmod-temp/lib/modules/5.4.254/modules.dep`
-
-Regex `(:\s*).*`
-
-### GCC
-`find modules_for_zip -type f -name "*.ko" -exec aarch64-none-linux-gnu-strip --strip-unneeded {} \;`
-
-```
-make -j$(nproc) -C $(pwd) O=$(pwd)/out \
-  DTC_EXT=$(pwd)/tools/dtc CONFIG_BUILD_ARM64_DT_OVERLAY=y \
-  ARCH=arm64 \
-  CC=clang \
-  CROSS_COMPILE=aarch64-none-linux-gnu- \
-  CLANG_TRIPLE=aarch64-none-linux-gnu- \
-  CONFIG_SECTION_MISMATCH_WARN_ONLY=y \
-  vendor/a52sxq_kor_single_defconfig
-```
-
-```
-make -j$(nproc) -C $(pwd) O=$(pwd)/out \
-  DTC_EXT=$(pwd)/tools/dtc CONFIG_BUILD_ARM64_DT_OVERLAY=y \
-  ARCH=arm64 \
-  CC=clang \
-  CROSS_COMPILE=aarch64-none-linux-gnu- \
-  CLANG_TRIPLE=aarch64-none-linux-gnu- \
-  CONFIG_SECTION_MISMATCH_WARN_ONLY=y
-```
